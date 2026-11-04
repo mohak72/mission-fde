@@ -1,0 +1,5 @@
+# Next Steps
+
+1. **Product Owner (Sarah):** Run `*execute-checklist-po` (po-master-checklist) to validate PRD+Architecture alignment, then `*shard-doc` both `docs/prd.md` and `docs/architecture.md` — the latter must produce `docs/architecture/coding-standards.md`, `docs/architecture/tech-stack.md`, and `docs/architecture/source-tree.md`, since `core-config.yaml`'s `devLoadAlwaysFiles` points there, not at this single file.
+2. **Scrum Master (Bob):** Draft Story 1.1 (`*create` / `create-next-story`) as the first file in `docs/stories/`, using this architecture document plus the sharded PRD epic — and per your teaching decision, bake in a "Concepts you need" section (AWS Labs G1 ties to Bedrock Converse here) and a "What this taught you" section tied to the AIP-C01 exam domain mapping from the roadmap sheet.
+3. **Before Dev starts:** Resolve the two MEDIUM risks above as quick spikes if you want extra confidence — verifying FastMCP's real current version, and a 10-minute sanity check that Bedrock is reachable with acceptable latency from wherever OKE will run — neither blocks starting Story 1.1, which touches neither.
