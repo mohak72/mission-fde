@@ -32,9 +32,34 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - run: uv sync
         working-directory: ${{ matrix.package }}
-      - name: pytest
-        run: uv run pytest
+      - name: pytest (unit)
+        run: uv run pytest tests/unit
         working-directory: ${{ matrix.package }}
+
+  integration-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: incident_copilot
+          POSTGRES_PASSWORD: incident_copilot
+          POSTGRES_DB: incident_copilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+        working-directory: apps/incident-copilot
+      - name: pytest (integration)
+        run: uv run pytest tests/integration
+        working-directory: apps/incident-copilot
 
   dependency-audit:
     runs-on: ubuntu-latest
