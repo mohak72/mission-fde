@@ -40,11 +40,15 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S"]
-ignore = ["S101"]
+# S101: asserts are how pytest works. B008: FastAPI's Depends(...)-as-default is the
+# documented idiom (https://fastapi.tiangolo.com/tutorial/dependencies/), not a real bug.
+ignore = ["S101", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 # Alembic-templated revision scripts follow Alembic's own generated style, not ours.
 "src/incident_copilot/persistence/migrations/versions/*.py" = ["E501", "I001", "UP035", "UP007"]
+# Test fixture strings that look like secrets are not secrets.
+"tests/**/*.py" = ["S105", "S106", "S107"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "src/incident_copilot/persistence/migrations"]
