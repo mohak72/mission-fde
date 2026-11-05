@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [apps/incident-copilot, platform]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+        working-directory: ${{ matrix.package }}
+      - name: ruff
+        run: uv run ruff check .
+        working-directory: ${{ matrix.package }}
+      - name: bandit
+        run: uv run bandit -r src -c pyproject.toml
+        working-directory: ${{ matrix.package }}
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [apps/incident-copilot, platform]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+        working-directory: ${{ matrix.package }}
+      - name: pytest
+        run: uv run pytest
+        working-directory: ${{ matrix.package }}
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [apps/incident-copilot, platform]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+        working-directory: ${{ matrix.package }}
+      - name: pip-audit
+        run: uv run pip-audit
+        working-directory: ${{ matrix.package }}
