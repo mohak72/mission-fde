@@ -23,8 +23,17 @@ The app serves `GET /health` at `http://localhost:8000/health`.
 Local Postgres + Chroma (needed from Story 1.2/1.3 onward) are available via:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+From Story 1.2 onward, the webhook needs its database migrated before first run:
+
+```bash
+cd apps/incident-copilot
+uv run alembic upgrade head
+```
+
+`webhook_hmac_secret` and `database_url` (see `config.py`'s `Settings`) must be set via a local `.env` file for anything beyond the insecure dev defaults — never hardcode them.
 
 ## Tests and linting
 
