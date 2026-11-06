@@ -15,12 +15,31 @@ from incident_copilot.config import settings
 
 EMBEDDING_MODEL_NAME = ONNXMiniLM_L6_V2.MODEL_NAME
 
-_client = chromadb.PersistentClient(path=settings.chroma_persist_directory)
+_client: chromadb.ClientAPI | None = None
 _embedding_function = ONNXMiniLM_L6_V2()
 
 
+def _get_client() -> chromadb.ClientAPI:
+    global _client
+    if _client is None:
+        _client = chromadb.PersistentClient(path=settings.chroma_persist_directory)
+    return _client
+
+
+def reset_client() -> None:
+    """Forces the next call to rebuild the client from current settings.
+
+    Exists for integration tests that need a dedicated, uniquely-named
+    collection/persist directory per session (Test Strategy's test-data
+    isolation rule) -- without this, the client would be frozen at whatever
+    path was live the first time this module was imported.
+    """
+    global _client
+    _client = None
+
+
 def _get_collection() -> Collection:
-    return _client.get_or_create_collection(
+    return _get_client().get_or_create_collection(
         name=settings.chroma_collection_name,
         embedding_function=_embedding_function,
     )

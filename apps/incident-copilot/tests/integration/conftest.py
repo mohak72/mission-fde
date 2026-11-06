@@ -1,3 +1,7 @@
+import shutil
+import tempfile
+import uuid
+
 import psycopg
 import pytest
 from sqlalchemy import create_engine, text
@@ -5,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from incident_copilot.config import settings
 from incident_copilot.persistence.models import Base
+from incident_copilot.retrieval import chroma_backend
 
 TEST_DB_NAME = "incident_copilot_test"
 
@@ -39,6 +44,23 @@ def _test_database():
 
     with psycopg.connect(admin_url, autocommit=True) as admin_conn:
         admin_conn.execute(f"DROP DATABASE IF EXISTS {TEST_DB_NAME}")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _chroma_test_isolation():
+    """Dedicated, uniquely-named Chroma persist directory + collection per
+    test session -- never the dev one, dropped on teardown.
+
+    [Source: architecture/test-strategy-and-standards.md#test-data-management]
+    """
+    tmp_dir = tempfile.mkdtemp(prefix="chroma_test_")
+    settings.chroma_persist_directory = tmp_dir
+    settings.chroma_collection_name = f"runbooks_test_{uuid.uuid4().hex[:8]}"
+    chroma_backend.reset_client()
+
+    yield
+
+    shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @pytest.fixture

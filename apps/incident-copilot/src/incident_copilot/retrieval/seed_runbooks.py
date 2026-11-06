@@ -11,6 +11,8 @@ Run as: `python -m incident_copilot.retrieval.seed_runbooks`
 
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
 from incident_copilot.persistence.models import Runbook, SessionLocal
 from incident_copilot.retrieval.interface import index_runbook
 
@@ -88,9 +90,15 @@ RUNBOOK_METADATA: list[dict] = [
 ]
 
 
-def seed_runbooks() -> int:
-    """Indexes every runbook in RUNBOOK_METADATA. Returns the count indexed."""
-    session = SessionLocal()
+def seed_runbooks(session: Session | None = None) -> int:
+    """Indexes every runbook in RUNBOOK_METADATA. Returns the count indexed.
+
+    Accepts an optional `session` so tests can seed against a dedicated test
+    database instead of the dev `SessionLocal` -- defaults to the latter for
+    the CLI entrypoint below.
+    """
+    owns_session = session is None
+    session = session or SessionLocal()
     try:
         for entry in RUNBOOK_METADATA:
             content = (RUNBOOKS_DIR / entry["file"]).read_text()
@@ -104,7 +112,8 @@ def seed_runbooks() -> int:
             index_runbook(runbook, session)
         return len(RUNBOOK_METADATA)
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
 if __name__ == "__main__":
