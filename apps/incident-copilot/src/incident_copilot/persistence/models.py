@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Index, String, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -31,6 +31,24 @@ class Alert(Base):
     signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False)
     team: Mapped[str | None] = mapped_column(String, nullable=True)
     dedup_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class Runbook(Base):
+    """Matches the `runbooks` table. [Source: architecture/database-schema.md]
+
+    The vector embedding of `content` is not a field here -- it's a Chroma
+    index entry addressed by this model's `id`.
+    """
+
+    __tablename__ = "runbooks"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    failure_mode_tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, default=list, server_default="{}"
+    )
+    team: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 def make_engine(database_url: str | None = None) -> Engine:

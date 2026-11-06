@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     environment: str = "local"
     database_url: str = "postgresql+psycopg://incident_copilot:incident_copilot@localhost:5432/incident_copilot"
     webhook_hmac_secret: str = "dev-only-insecure-secret-change-me"  # noqa: S105 -- placeholder, overridden via .env
+    chroma_persist_directory: str = "./.chroma_data"
+    chroma_collection_name: str = "runbooks"
 
 
 settings = Settings()
