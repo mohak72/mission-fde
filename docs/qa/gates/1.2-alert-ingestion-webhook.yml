@@ -1,0 +1,127 @@
+schema: 1
+story: '1.2'
+story_title: 'Alert Ingestion Webhook'
+gate: CONCERNS
+status_reason: >-
+  Core functionality is correct and well-tested (atomic dedup proven against real
+  Postgres, signature verification uses constant-time comparison, repository pattern
+  respected). Two medium-severity testing gaps keep this from a clean PASS: the
+  signature-before-parsing order (NFR9 AC4) is only verified manually via curl, not
+  by an automated regression test, and no integration test exercises the full
+  webhook route end-to-end against a real database. Neither blocks merge; both are
+  cheap to close in a short follow-up.
+reviewer: 'Quinn (Test Architect)'
+updated: '2026-11-06T00:00:00Z'
+
+top_issues:
+  - id: 1.2-01
+    severity: medium
+    finding: >-
+      No automated test proves signature verification happens strictly before
+      JSON parsing. This was verified manually (curl with a bogus-signature +
+      malformed body returning 401, not 400) but that proof doesn't persist in
+      the test suite — a future refactor could silently invert the order and
+      no CI check would catch it.
+    suggested_owner: dev
+    refs:
+      - apps/incident-copilot/tests/unit/test_webhook.py
+      - apps/incident-copilot/src/incident_copilot/api/webhook.py
+  - id: 1.2-02
+    severity: medium
+    finding: >-
+      The only integration test (test_alert_dedup.py) exercises AlertRepository
+      directly; nothing in the integration tier posts to the real /webhook/alert
+      route against a live DB (dependency override is used in all webhook tests).
+      The full signature-verify -> parse -> persist chain has only been proven
+      manually, not by an automated, repeatable test.
+    suggested_owner: dev
+    refs:
+      - apps/incident-copilot/tests/integration/test_alert_dedup.py
+      - apps/incident-copilot/src/incident_copilot/api/webhook.py
+  - id: 1.2-03
+    severity: low
+    finding: >-
+      AlertRepository.insert_if_new always does an INSERT...RETURNING followed
+      by a separate SELECT, even on the non-conflict path where RETURNING could
+      have supplied the full row directly. Minor extra round-trip per request,
+      not a functional issue.
+    suggested_owner: dev
+    refs:
+      - apps/incident-copilot/src/incident_copilot/persistence/repositories.py
+  - id: 1.2-04
+    severity: low
+    finding: >-
+      test_alert_dedup.py asserts row count and id equality but not that the
+      persisted `payload` column actually matches what was passed in -- AC2's
+      "persisted (id, payload, received_at)" isn't fully asserted at the data
+      level.
+    suggested_owner: dev
+    refs:
+      - apps/incident-copilot/tests/integration/test_alert_dedup.py
+
+waiver: { active: false }
+
+quality_score: 80
+expires: '2026-11-20T00:00:00Z'
+
+evidence:
+  tests_reviewed: 11
+  risks_identified: 4
+  trace:
+    ac_covered: [1, 2, 3, 4, 5]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: >-
+      HMAC-SHA256 verified via hmac.compare_digest (constant-time, no timing
+      side-channel). Secret and DB URL read through pydantic-settings, never
+      hardcoded or read via os.environ directly. Dev-default secret is clearly
+      marked insecure-placeholder and overridden via .env. Parameterized
+      queries throughout (SQLAlchemy ORM) -- no injection surface. Replay of a
+      validly-signed request is harmless by construction (dedup is idempotent).
+  performance:
+    status: PASS
+    notes: >-
+      No NFR performance target defined for this story. insert_if_new's extra
+      round-trip (1.2-03) is negligible at expected M1 volume; flagged as a
+      future nice-to-have, not a current concern.
+  reliability:
+    status: CONCERNS
+    notes: >-
+      Functionally correct and manually verified end-to-end, but two of the
+      four verification paths (signature-before-parse ordering, full route-level
+      DB integration) rely on manual verification rather than an automated,
+      regression-proof test (1.2-01, 1.2-02).
+  maintainability:
+    status: PASS
+    notes: >-
+      Repository pattern strictly respected (AlertRepository is the only module
+      touching `alerts`). Clean separation: auth.py / schemas.py / ingestion
+      entrypoint / api route. Type hints on all public signatures. Comments
+      used only where they explain non-obvious WHY (dedup atomicity, signature
+      ordering), not restating WHAT. Deviation from story's literal "mock
+      AlertRepository" instruction in unit tests was disclosed, not silent.
+
+recommendations:
+  immediate: []
+  future:
+    - action: >-
+        Add a unit test asserting a bogus-signature request with a malformed
+        body returns 401 (not 400), locking in NFR9's "signature verified
+        before any processing" ordering as a permanent regression check.
+      refs: ['apps/incident-copilot/tests/unit/test_webhook.py']
+    - action: >-
+        Add an integration test that posts to the real /webhook/alert route
+        (no dependency override) against the live test Postgres, covering the
+        full signature -> parse -> persist chain in one automated test.
+      refs: ['apps/incident-copilot/tests/integration/']
+    - action: >-
+        Consider having insert_if_new's RETURNING clause return full row data
+        on the insert path, avoiding the extra SELECT round-trip.
+      refs: ['apps/incident-copilot/src/incident_copilot/persistence/repositories.py']
+    - action: >-
+        Extend test_alert_dedup.py to assert the persisted payload column
+        content matches the input, not just row count/id.
+      refs: ['apps/incident-copilot/tests/integration/test_alert_dedup.py']
