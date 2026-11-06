@@ -57,6 +57,11 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - run: uv sync
         working-directory: apps/incident-copilot
+      - name: cache Chroma embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/chroma/onnx_models
+          key: chroma-onnx-all-MiniLM-L6-v2
       - name: pytest (integration)
         run: uv run pytest tests/integration
         working-directory: apps/incident-copilot
