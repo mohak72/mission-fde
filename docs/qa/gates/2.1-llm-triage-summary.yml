@@ -1,0 +1,72 @@
+schema: 1
+story: "2.1"
+story_title: "LLM Triage Summary"
+gate: PASS
+status_reason: >
+  All three issues from the 2026-11-07 review (REL-001, REL-002, PROC-001)
+  were fixed with targeted code changes and new, independently re-verified
+  test coverage. No new issues found on re-review.
+reviewer: "Quinn (Test Architect)"
+updated: "2026-11-07T01:00:00Z"
+
+waiver: { active: false }
+
+top_issues: []
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 0, low: 0 }
+  recommendations:
+    must_fix: []
+    monitor: []
+
+quality_score: 100
+expires: "2026-11-21T00:00:00Z"
+
+evidence:
+  tests_reviewed: 22
+  risks_identified: 0
+  trace:
+    ac_covered: [1, 2, 3, 4]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      NFR1 seam fully respected; no raw alert/kubeconfig/credential logging;
+      AWS creds via boto3's own standard chain.
+  performance:
+    status: PASS
+    notes: "30s timeout via botocore Config; bounded exponential-backoff retry (max 3 attempts)."
+  reliability:
+    status: PASS
+    notes: >
+      REL-001 fixed: gateway.complete() now catches (KeyError, IndexError)
+      from a malformed Bedrock response shape, translates to GatewayError,
+      never retries -- covered by a new test at both the bedrock_provider
+      level (platform/tests/unit/test_bedrock_provider.py, mocks the boto3
+      client directly) and the gateway level. REL-002 fixed:
+      propose._parse_response() now raises GatewayError on a non-conforming
+      LLM response instead of silently returning matched=True with empty
+      fields -- covered by a new test. Independently re-ran the full suite
+      (ruff, bandit, unit, integration) on both packages: all green (8
+      platform unit tests, 22 incident-copilot unit+integration tests).
+  maintainability:
+    status: PASS
+    notes: >
+      Fixes are minimal and consistent with the existing boundary-mocking
+      and exception-translation conventions; no new exception hierarchy
+      introduced where the story had already deliberately deferred that
+      decision. PROC-001 (Task 3 checkbox) fixed.
+
+history:
+  - at: "2026-11-07T00:00:00Z"
+    gate: CONCERNS
+    note: "Initial review -- REL-001, REL-002 (medium), PROC-001 (low)"
+  - at: "2026-11-07T01:00:00Z"
+    gate: PASS
+    note: "All three issues fixed and independently re-verified"
+
+recommendations:
+  immediate: []
+  future: []

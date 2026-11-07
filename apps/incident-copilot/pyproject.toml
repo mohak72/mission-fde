@@ -12,6 +12,7 @@ dependencies = [
     "psycopg[binary]>=3.3,<3.4",
     "chromadb==1.5.9",
     "structlog>=26.0,<27",
+    "platform-core",
 ]
 
 [dependency-groups]
@@ -55,3 +56,6 @@ ignore = ["S101", "B008"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "src/incident_copilot/persistence/migrations"]
+
+[tool.uv.sources]
+platform-core = { path = "../../platform", editable = true }

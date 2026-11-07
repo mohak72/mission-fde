@@ -54,12 +54,15 @@ def upsert_embedding(runbook_id: str, content: str) -> None:
     _get_collection().upsert(ids=[runbook_id], documents=[content])
 
 
-def query_nearest(query_text: str, n_results: int = 1) -> list[str]:
-    """Returns the nearest runbook ids for `query_text`, most similar first.
+def query_nearest(query_text: str, n_results: int = 1) -> list[tuple[str, float]]:
+    """Returns the nearest (runbook_id, distance) pairs for `query_text`, most
+    similar first -- lower distance means more similar (Chroma's default
+    squared-L2 space).
 
     Embedded with the same collection-attached embedding function used at
     index time -- this is what keeps query and index vectors comparable.
     """
     result = _get_collection().query(query_texts=[query_text], n_results=n_results)
     ids = result["ids"][0]
-    return list(ids)
+    distances = result["distances"][0]
+    return list(zip(ids, distances, strict=True))
