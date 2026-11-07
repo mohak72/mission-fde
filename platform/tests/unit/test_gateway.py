@@ -53,3 +53,19 @@ def test_complete_does_not_retry_non_transient_error(mocker) -> None:
         complete("diagnose this alert")
 
     assert mock_converse.call_count == 1
+
+
+def test_complete_raises_gateway_error_on_malformed_response_shape(mocker) -> None:
+    """REL-001: an unexpected Bedrock response shape (surfacing as a raw
+    KeyError/IndexError from `converse`) must be translated to GatewayError,
+    never retried, and never leak past the Gateway seam."""
+    mocker.patch("platform_core.gateway.gateway.time.sleep")
+    mock_converse = mocker.patch(
+        "platform_core.gateway.gateway.converse",
+        side_effect=KeyError("output"),
+    )
+
+    with pytest.raises(GatewayError):
+        complete("diagnose this alert")
+
+    assert mock_converse.call_count == 1

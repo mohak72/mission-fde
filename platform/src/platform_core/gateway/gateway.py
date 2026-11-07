@@ -72,5 +72,10 @@ def complete(prompt: str, model_config: ModelConfig | None = None) -> LLMRespons
                 raise GatewayError(f"Bedrock call failed: {exc}") from exc
             # retry jitter, not crypto
             time.sleep((2 ** (attempt - 1)) + random.uniform(0, 1))  # noqa: S311 # nosec B311
+        except (KeyError, IndexError) as exc:
+            # An unexpected Bedrock response shape (e.g. an empty content
+            # list) -- a bug/contract mismatch, not transience, so this is
+            # never retried. [QA Story 2.1 REL-001]
+            raise GatewayError(f"Unexpected Bedrock response shape: {exc!r}") from exc
 
     raise GatewayError(f"Bedrock call failed: {last_error}") from last_error

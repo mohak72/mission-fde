@@ -4,7 +4,7 @@ than needing to migrate it out of some other temporary location.
 [Source: architecture/source-tree.md, docs/stories/2.1.llm-triage-summary.md]
 """
 
-from platform_core.gateway.gateway import complete
+from platform_core.gateway.gateway import GatewayError, complete
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -46,6 +46,11 @@ def _build_prompt(alert: Alert, runbook: Runbook) -> str:
 
 
 def _parse_response(text: str) -> DiagnosisResult:
+    """Raises `GatewayError` if the LLM didn't follow the required 3-line
+    format -- returning `matched=True` with missing fields would silently
+    violate AC2 (explicit citation) in a way callers can't detect.
+    [QA Story 2.1 REL-002]
+    """
     fields: dict[str, str | None] = {"cause": None, "action": None, "citation": None}
     prefixes = (("cause", "Cause:"), ("action", "Action:"), ("citation", "Citation:"))
     for line in text.splitlines():
@@ -53,6 +58,10 @@ def _parse_response(text: str) -> DiagnosisResult:
         for key, prefix in prefixes:
             if stripped.startswith(prefix):
                 fields[key] = stripped[len(prefix) :].strip()
+    if any(value is None for value in fields.values()):
+        raise GatewayError(
+            f"LLM response did not match the expected Cause/Action/Citation format: {text!r}"
+        )
     return DiagnosisResult(
         matched=True,
         cause=fields["cause"],

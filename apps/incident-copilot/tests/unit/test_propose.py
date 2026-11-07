@@ -66,3 +66,19 @@ def test_propose_diagnosis_surfaces_gateway_error(mocker) -> None:
 
     with pytest.raises(GatewayError):
         propose_diagnosis(ALERT, object())
+
+
+def test_propose_diagnosis_raises_on_malformed_llm_response(mocker) -> None:
+    """REL-002: a non-conforming LLM response (missing one of the required
+    Cause/Action/Citation lines) must raise, never silently return
+    matched=True with empty fields -- that would violate AC2 undetectably."""
+    mocker.patch(
+        "incident_copilot.graph.nodes.propose.retrieve_runbook", return_value=RUNBOOK
+    )
+    mock_complete = mocker.patch("incident_copilot.graph.nodes.propose.complete")
+    mock_complete.return_value.content = (
+        "Cause: Container exceeded its memory limit\nAction: Raise resources.limits.memory"
+    )
+
+    with pytest.raises(GatewayError):
+        propose_diagnosis(ALERT, object())
