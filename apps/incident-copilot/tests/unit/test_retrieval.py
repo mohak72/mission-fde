@@ -27,9 +27,10 @@ def test_index_runbook_persists_metadata_and_embeds_content(mocker) -> None:
     mock_upsert_embedding.assert_called_once_with("pod-crashloop-oom", "...")
 
 
-def test_retrieve_runbook_returns_nearest_match(mocker) -> None:
+def test_retrieve_runbook_returns_nearest_match_above_threshold(mocker) -> None:
     mocker.patch(
-        "incident_copilot.retrieval.interface.query_nearest", return_value=["node-not-ready"]
+        "incident_copilot.retrieval.interface.query_nearest",
+        return_value=[("node-not-ready", 0.25)],
     )
     expected_runbook = Runbook(
         id="node-not-ready", title="Node NotReady", content="...", failure_mode_tags=[], team=None
@@ -67,8 +68,30 @@ def test_retrieve_runbook_returns_none_when_chroma_has_no_match(mocker) -> None:
     assert result is None
 
 
+def test_retrieve_runbook_returns_none_below_confidence_threshold(mocker) -> None:
+    mocker.patch(
+        "incident_copilot.retrieval.interface.query_nearest",
+        return_value=[("certificate-expiry", 0.91)],
+    )
+    mock_repo_cls = mocker.patch("incident_copilot.retrieval.interface.RunbookRepository")
+    alert = Alert(
+        id=None,
+        external_alert_id="a1",
+        payload={"labels": {}, "annotations": {"summary": "quarterly revenue numbers"}},
+        received_at=None,
+        signature_verified=True,
+    )
+
+    result = interface.retrieve_runbook(alert, object())
+
+    assert result is None
+    mock_repo_cls.return_value.get_by_id.assert_not_called()
+
+
 def test_retrieve_runbook_logs_latency_and_embedding_model(mocker) -> None:
-    mocker.patch("incident_copilot.retrieval.interface.query_nearest", return_value=["x"])
+    mocker.patch(
+        "incident_copilot.retrieval.interface.query_nearest", return_value=[("x", 0.1)]
+    )
     mocker.patch("incident_copilot.retrieval.interface.RunbookRepository")
     mock_logger = mocker.patch("incident_copilot.retrieval.interface.logger")
     alert = Alert(

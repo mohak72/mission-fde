@@ -18,6 +18,14 @@ from incident_copilot.retrieval.chroma_backend import (
 
 logger = structlog.get_logger(component="retrieval")
 
+# Chroma's default distance space is squared-L2 (lower = more similar). Picked
+# empirically against the 10 hand-labeled cases from tests/fixtures/
+# retrieval_test_cases.py: every correct match there scores 0.21-0.37, while
+# three clearly-unrelated probe queries ("what is the capital of France", etc.)
+# scored 0.88-0.96 -- 0.5 sits comfortably in the gap between those two
+# clusters. [Source: Story 2.1 Completion Notes]
+CONFIDENCE_DISTANCE_THRESHOLD = 0.5
+
 
 def index_runbook(runbook: Runbook, session: Session) -> None:
     """Corpus management: persists metadata/content to Postgres, then embeds
@@ -44,14 +52,15 @@ def _query_text_for_alert(alert: Alert) -> str:
 
 
 def retrieve_runbook(alert: Alert, session: Session) -> Runbook | None:
-    """Always returns the top-1 nearest match in this story -- the
-    `None`-on-low-confidence threshold is Story 2.1's addition, not this
-    story's. [Source: architecture/components.md#retrieval-service]
+    """Returns the top-1 nearest match, or `None` if it's below the
+    confidence threshold (AC3 -- added this story; Story 1.3 always returned
+    the top-1 match regardless of distance).
+    [Source: architecture/components.md#retrieval-service]
     """
     query_text = _query_text_for_alert(alert)
 
     start = time.monotonic()
-    nearest_ids = query_nearest(query_text, n_results=1)
+    nearest = query_nearest(query_text, n_results=1)
     latency_ms = (time.monotonic() - start) * 1000
 
     logger.info(
@@ -60,7 +69,11 @@ def retrieve_runbook(alert: Alert, session: Session) -> Runbook | None:
         embedding_model=EMBEDDING_MODEL_NAME,
     )
 
-    if not nearest_ids:
+    if not nearest:
         return None
 
-    return RunbookRepository(session).get_by_id(nearest_ids[0])
+    nearest_id, distance = nearest[0]
+    if distance > CONFIDENCE_DISTANCE_THRESHOLD:
+        return None
+
+    return RunbookRepository(session).get_by_id(nearest_id)
