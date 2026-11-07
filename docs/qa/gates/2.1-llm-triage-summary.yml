@@ -1,0 +1,106 @@
+schema: 1
+story: "2.1"
+story_title: "LLM Triage Summary"
+gate: CONCERNS
+status_reason: >
+  Core Gateway seam, retry/timeout, and confidence-threshold logic are solid and
+  well-tested, but two malformed-input paths (unexpected Bedrock response shape;
+  non-conforming LLM output format) are untested and can either leak a raw
+  Python exception past the Gateway seam or silently return an empty-but-"matched"
+  diagnosis -- non-blocking for MVP, but real reliability gaps.
+reviewer: "Quinn (Test Architect)"
+updated: "2026-11-07T00:00:00Z"
+
+waiver: { active: false }
+
+top_issues:
+  - id: "REL-001"
+    severity: medium
+    finding: >
+      bedrock_provider.converse() extracts text via
+      response["output"]["message"]["content"][0]["text"] with no test
+      coverage of that parsing step. An unexpected Bedrock response shape
+      (e.g. empty content list, different content block type) raises a raw
+      KeyError/IndexError, not a botocore exception -- gateway.complete()'s
+      except clause only catches (ClientError, BotoCoreError), so this
+      escapes uncaught, undermining the Gateway's role as the seam that
+      hides provider-shape details from callers.
+    suggested_action: >
+      Add a unit test mocking the boto3 client's converse() return value to
+      cover a malformed/unexpected response shape, and either wrap the
+      extraction in a try/except that raises GatewayError, or document why
+      this is accepted as out of scope.
+    suggested_owner: dev
+  - id: "REL-002"
+    severity: medium
+    finding: >
+      propose.py's _parse_response() returns DiagnosisResult(matched=True,
+      cause=None, next_step_action=None, runbook_citation=None) if the LLM's
+      reply doesn't contain the expected "Cause:"/"Action:"/"Citation:"
+      prefixes -- no test exercises this path. This silently violates AC2
+      (explicit runbook citation) without raising or signaling a failure,
+      which is worse than an explicit error since callers see matched=True.
+    suggested_action: >
+      Add a test for a non-conforming LLM response and decide the intended
+      behavior (e.g. treat incomplete parsing as matched=False, or raise).
+    suggested_owner: dev
+  - id: "PROC-001"
+    severity: low
+    finding: >
+      Task 3's top-level checkbox is unchecked ("- [ ] Task 3: ...") while
+      all 4 of its subtasks are checked -- a bookkeeping inconsistency in the
+      story file, not a code issue.
+    suggested_action: "Check the Task 3 top-level box to match its subtasks."
+    suggested_owner: dev
+
+risk_summary:
+  totals: { critical: 0, high: 0, medium: 2, low: 1 }
+  recommendations:
+    must_fix: []
+    monitor:
+      - "Add coverage for malformed Bedrock response shape (REL-001)"
+      - "Add coverage for non-conforming LLM output format (REL-002)"
+
+quality_score: 80
+expires: "2026-11-21T00:00:00Z"
+
+evidence:
+  tests_reviewed: 19
+  risks_identified: 3
+  trace:
+    ac_covered: [1, 2, 3, 4]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      NFR1 seam fully respected (boto3/botocore only imported/caught in
+      platform/gateway/); no raw alert/kubeconfig/credential logging; AWS
+      creds read via boto3's own standard chain, not modeled in app config.
+  performance:
+    status: PASS
+    notes: "30s timeout via botocore Config; bounded exponential-backoff retry (max 3 attempts)."
+  reliability:
+    status: CONCERNS
+    notes: >
+      Retry/timeout/confidence-threshold logic is solid and regression-tested
+      (Story 1.3's 10/10 accuracy test re-verified). REL-001/REL-002 are real,
+      untested malformed-input gaps -- see top_issues.
+  maintainability:
+    status: PASS
+    notes: >
+      Clear seam boundaries, consistent boundary-mocking test convention,
+      well-documented rationale for every non-obvious decision (model choice,
+      exception hierarchy placement, circuit-breaker deferral, threshold
+      calibration).
+
+recommendations:
+  immediate: []
+  future:
+    - action: "Add test coverage + explicit handling for malformed Bedrock response shape"
+      refs: ["platform/src/platform_core/gateway/bedrock_provider.py:25-38"]
+    - action: "Add test coverage + explicit handling for non-conforming LLM output format"
+      refs: ["apps/incident-copilot/src/incident_copilot/graph/nodes/propose.py:48-61"]
+    - action: "Fix Task 3 checkbox bookkeeping inconsistency"
+      refs: ["docs/stories/2.1.llm-triage-summary.md"]
