@@ -13,6 +13,7 @@ dependencies = [
     "chromadb==1.5.9",
     "structlog>=26.0,<27",
     "platform-core",
+    "langgraph==1.2.20",
 ]
 
 [dependency-groups]
