@@ -80,8 +80,10 @@ def test_run_pipeline_marks_failed_and_returns_run_on_node_exception(mocker) -> 
     mock_run_repo.create.return_value = run
     mocker.patch.object(pipeline_module, "PipelineRunRepository", return_value=mock_run_repo)
 
-    result = pipeline_module.run_pipeline(ALERT, session=object())
+    mock_session = mocker.Mock()
+    result = pipeline_module.run_pipeline(ALERT, session=mock_session)
 
+    mock_session.rollback.assert_called_once()
     mock_run_repo.mark_failed.assert_called_once_with(run.id)
     mock_run_repo.mark_completed.assert_not_called()
     assert result is run

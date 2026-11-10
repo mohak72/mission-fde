@@ -85,6 +85,7 @@ def run_pipeline(alert: Alert, session: Session) -> PipelineRun:
     run = run_repo.create(alert.id, platform_settings.bedrock_model_id)
 
     structlog.contextvars.bind_contextvars(pipeline_run_id=str(run.id))
+    last_node_name: str | None = None
     try:
         state_values: dict = {"alert": alert}
         entered_at = datetime.now(UTC)
@@ -94,6 +95,7 @@ def run_pipeline(alert: Alert, session: Session) -> PipelineRun:
             stream_mode="updates",
         ):
             ((node_name, output),) = chunk.items()
+            last_node_name = node_name
             exited_at = datetime.now(UTC)
             state_values.update(output)
             run_repo.append_transition(
@@ -121,8 +123,15 @@ def run_pipeline(alert: Alert, session: Session) -> PipelineRun:
         # A failed run is a terminal, inspectable state (PipelineRun.status),
         # never a silent swallow -- but it IS the signal; this never
         # re-raises. [Source: architecture/error-handling-strategy.md#error-propagation]
+        #
+        # [QA Story 2.2 REL-003] If the exception above was itself raised by a
+        # SQL statement on this session (e.g. an IntegrityError), the session
+        # is left in SQLAlchemy's "pending rollback" state -- mark_failed()
+        # would then raise PendingRollbackError and escape uncaught. Rolling
+        # back first is a safe no-op on an already-clean session either way.
+        session.rollback()
         run_repo.mark_failed(run.id)
-        logger.exception("pipeline_run_failed")
+        logger.exception("pipeline_run_failed", node_name=last_node_name)
         return run
     finally:
         structlog.contextvars.unbind_contextvars("pipeline_run_id")
