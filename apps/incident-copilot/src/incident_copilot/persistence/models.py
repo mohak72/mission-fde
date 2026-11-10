@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Index, String, func
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -49,6 +49,50 @@ class Runbook(Base):
         ARRAY(String), nullable=False, default=list, server_default="{}"
     )
     team: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class PipelineRun(Base):
+    """Matches the `pipeline_runs` table. [Source: architecture/database-schema.md]"""
+
+    __tablename__ = "pipeline_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed')", name="ck_pipeline_runs_status"
+        ),
+        Index("idx_pipeline_runs_alert", "alert_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alert_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("alerts.id"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
+    node_transitions: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list, server_default="[]"
+    )
+    llm_provider_config: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class DiagnosisProposal(Base):
+    """Matches the `diagnosis_proposals` table. [Source: architecture/database-schema.md]"""
+
+    __tablename__ = "diagnosis_proposals"
+    __table_args__ = (
+        Index("idx_proposals_run", "pipeline_run_id", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    pipeline_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pipeline_runs.id"), nullable=False
+    )
+    runbook_id: Mapped[str | None] = mapped_column(String, ForeignKey("runbooks.id"), nullable=True)
+    cause: Mapped[str] = mapped_column(String, nullable=False)
+    next_step_action: Mapped[str] = mapped_column(String, nullable=False)
+    runbook_citation: Mapped[str | None] = mapped_column(String, nullable=True)
+    live_evidence: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
+    grounded_in_live_state: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
 def make_engine(database_url: str | None = None) -> Engine:

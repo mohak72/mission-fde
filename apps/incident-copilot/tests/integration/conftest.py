@@ -72,7 +72,7 @@ def db_session():
     try:
         yield session
     finally:
-        session.execute(text("TRUNCATE alerts"))
+        session.execute(text("TRUNCATE alerts, pipeline_runs, diagnosis_proposals CASCADE"))
         session.commit()
         session.close()
         engine.dispose()
