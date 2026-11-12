@@ -1,84 +1,35 @@
 schema: 1
 story: "2.2"
 story_title: "LangGraph State Machine Refactor"
-gate: CONCERNS
+gate: PASS
 status_reason: >
-  All four ACs are met on the happy path and the one Dev-flagged edge case
-  (no-match result). Independent re-run of lint/security/unit/integration
-  all green, matching Dev's self-report. However, independent reproduction
-  found a real reliability gap in run_pipeline's failure-recovery path
-  (REL-003, medium-high) that the existing test suite structurally cannot
-  catch, because its only failure-path test fully mocks PipelineRunRepository.
+  REL-003 and PROC-002 both independently re-verified fixed. session.rollback()
+  now precedes mark_failed() in run_pipeline's except block; confirmed this is
+  the correct fix, not a tautological test, by temporarily reverting the
+  rollback call locally and re-running the new regression test -- it failed
+  exactly as predicted (PendingRollbackError escaping uncaught), then passed
+  again once restored. node_name on the pipeline_run_failed log line confirmed
+  populated with the real last-completed node (not hardcoded) in a multi-node
+  scenario. Full lint/security/unit/integration/pip-audit re-run clean.
 reviewer: "Quinn (Test Architect)"
-updated: "2026-11-10T18:00:00Z"
+updated: "2026-11-12T14:45:00Z"
 
 waiver: { active: false }
 
-top_issues:
-  - id: "REL-003"
-    severity: medium-high
-    finding: >
-      run_pipeline's except block calls run_repo.mark_failed(run.id) on the
-      same SQLAlchemy Session that was active when the original exception
-      was raised. If that exception came from a failed SQL statement on this
-      session (an IntegrityError from DiagnosisProposalRepository.create(),
-      an OperationalError from a transient DB connection blip during any
-      repository .commit() mid-run, etc.), the session is left in SQLAlchemy's
-      "pending rollback" state. The recovery call then itself raises
-      sqlalchemy.exc.PendingRollbackError, which is NOT caught -- it escapes
-      run_pipeline uncaught, directly violating this story's own stated
-      contract ("re-raises nothing further... never a silent swallow",
-      architecture/error-handling-strategy.md#error-propagation) and AC4's
-      implicit promise that a failed run always ends up in an inspectable
-      PipelineRun(status='failed') row. Reproduced independently against a
-      real Postgres session: forcing a NOT NULL violation on
-      DiagnosisProposalRepository.create() and then calling mark_failed() on
-      the same session raises PendingRollbackError every time. The existing
-      failure-path test (tests/unit/graph/test_pipeline.py::
-      test_run_pipeline_marks_failed_and_returns_run_on_node_exception) uses
-      a fully-mocked PipelineRunRepository, so it cannot exercise this path --
-      it only proves a non-DB exception (RuntimeError from a node) is handled,
-      never a DB-originated one.
-    suggested_action: >
-      In run_pipeline's except block, call session.rollback() before
-      run_repo.mark_failed(run.id) (rollback on an already-clean session is
-      a safe no-op, so this is correct regardless of whether the original
-      exception was DB-related). Add an integration-level regression test
-      (real session, not mocked) that forces a DB-level failure mid-run
-      (e.g. the same NOT NULL violation used in this review) and asserts
-      run_pipeline returns a PipelineRun(status='failed') rather than
-      raising.
-    suggested_owner: dev
-  - id: "PROC-002"
-    severity: low
-    finding: >
-      logger.exception("pipeline_run_failed") in run_pipeline's except block
-      does not include which node was executing when the exception was
-      raised. The traceback (captured via structlog's exc_info) will usually
-      show the failing node's function name, but AC4's "replayable from the
-      log alone" promise would be more directly satisfied with an explicit
-      node_name field on this log line, consistent with the node_transition
-      log line's own node_name field.
-    suggested_action: >
-      Track the current node name (e.g. via the last chunk's key before the
-      exception, or a small wrapper) and pass it as a bound field on the
-      pipeline_run_failed log line.
-    suggested_owner: dev
+top_issues: []
 
 risk_summary:
-  totals: { critical: 0, high: 0, medium: 1, low: 1 }
+  totals: { critical: 0, high: 0, medium: 0, low: 0 }
   recommendations:
-    must_fix:
-      - "REL-003: add session.rollback() before mark_failed() in run_pipeline's except block, plus a real-session regression test."
-    monitor:
-      - "PROC-002: node_name on the failure log line (nice-to-have, not blocking)."
+    must_fix: []
+    monitor: []
 
-quality_score: 80
-expires: "2026-11-24T00:00:00Z"
+quality_score: 100
+expires: "2026-11-26T00:00:00Z"
 
 evidence:
-  tests_reviewed: 37
-  risks_identified: 2
+  tests_reviewed: 38
+  risks_identified: 0
   trace:
     ac_covered: [1, 2, 3, 4]
     ac_gaps: []
@@ -87,44 +38,41 @@ nfr_validation:
   security:
     status: PASS
     notes: >
-      No raw alert payload logged (_summarize_output never includes the
-      alert field; confirmed by reading every node's return shape). All DB
-      access routed through repositories, per coding-standards critical
-      rules. bandit clean.
+      No raw alert payload logged. All DB access routed through repositories.
+      bandit clean. pip-audit: 4 pre-existing chromadb==1.5.9 CVEs, inherited
+      from Story 1.3's pin, not introduced by this story or this fix.
   performance:
     status: PASS
     notes: >
       Per-node commits (not one long transaction) match
-      error-handling-strategy.md's data-consistency guidance; no N+1 or
-      unbounded query introduced.
+      error-handling-strategy.md's data-consistency guidance; session.rollback()
+      on an already-clean session is a safe no-op, no added overhead on the
+      happy path.
   reliability:
-    status: CONCERNS
+    status: PASS
     notes: >
-      REL-003 (above): the failure-recovery path itself can raise and escape
-      uncaught when the original failure was DB-originated, undermining the
-      exact "never re-raises" guarantee this story was tasked with
-      implementing. Reproduced independently, not covered by existing tests.
-      Everything else in the reliability surface (per-node transition
-      logging surviving a mid-graph failure, no-match path leaving no
-      DiagnosisProposal row, GatewayError/RetrievalError propagation from
-      Story 2.1's reused propose_diagnosis) verified correct.
+      REL-003 fix independently reproduced as effective: reverting
+      session.rollback() locally makes the new integration test
+      (test_run_pipeline_recovers_from_db_originated_failure) fail with the
+      exact originally-reported PendingRollbackError; restoring the fix makes
+      it pass. This proves the test is a real regression guard, not a
+      tautology that would pass either way. run_pipeline now recovers cleanly
+      from both DB-originated and node-originated failures without re-raising.
   maintainability:
     status: PASS
     notes: >
-      propose.py left byte-for-byte unchanged as directed, keeping the AC3
-      regression test meaningful. graph/state.py's addition (not in the
-      story's original file list) is a sound, well-justified deviation to
-      avoid a circular import. The double retrieve_runbook call and the
-      pre-existing chromadb CVEs are correctly identified by Dev as
-      out-of-scope, not silently ignored.
+      Fix is minimal and scoped (one line + a log field). Existing unit
+      failure-path test correctly upgraded from a bare object() (which
+      couldn't assert rollback was called) to a real Mock().
 
 history:
   - at: "2026-11-10T18:00:00Z"
     gate: CONCERNS
     note: "Initial post-merge review -- REL-003 (medium-high), PROC-002 (low)"
+  - at: "2026-11-12T14:45:00Z"
+    gate: PASS
+    note: "Both issues fixed and independently re-verified, including proving the new regression test is non-tautological"
 
 recommendations:
-  immediate:
-    - "Fix REL-003 (session.rollback() before mark_failed) and add a real-session failure regression test."
-  future:
-    - "PROC-002: attach node_name to the pipeline_run_failed log line."
+  immediate: []
+  future: []
