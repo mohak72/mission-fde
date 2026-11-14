@@ -1,3 +1,4 @@
+import urllib3.exceptions
 from kubernetes.client.exceptions import ApiException
 
 from incident_copilot.cluster.evidence import ClusterEvidenceError, get_evidence
@@ -90,11 +91,35 @@ def test_get_evidence_raises_cluster_evidence_error_on_api_exception(mocker) -> 
         raise AssertionError("expected ClusterEvidenceError")
 
 
-def test_get_evidence_raises_cluster_evidence_error_on_timeout(mocker) -> None:
+def test_get_evidence_raises_cluster_evidence_error_on_builtin_timeout(mocker) -> None:
     mocker.patch("incident_copilot.cluster.evidence._get_api_client")
     mock_core_v1 = mocker.Mock()
     mocker.patch("incident_copilot.cluster.evidence.client.CoreV1Api", return_value=mock_core_v1)
     mock_core_v1.read_namespaced_pod.side_effect = TimeoutError("timed out")
+
+    try:
+        get_evidence(_alert({"namespace": "prod", "pod": "api-7f8"}))
+    except ClusterEvidenceError:
+        pass
+    else:
+        raise AssertionError("expected ClusterEvidenceError")
+
+
+def test_get_evidence_raises_cluster_evidence_error_on_real_urllib3_timeout(mocker) -> None:
+    """[QA Story 2.3 REL-004] A real `_request_timeout` expiry raises
+    urllib3.exceptions.MaxRetryError/ReadTimeoutError, not the builtin
+    TimeoutError -- this is what the Kubernetes client actually raises, and
+    the prior test above (mocking the builtin) never exercised this path.
+    """
+    mocker.patch("incident_copilot.cluster.evidence._get_api_client")
+    mock_core_v1 = mocker.Mock()
+    mocker.patch("incident_copilot.cluster.evidence.client.CoreV1Api", return_value=mock_core_v1)
+    pool = mocker.Mock()
+    mock_core_v1.read_namespaced_pod.side_effect = urllib3.exceptions.MaxRetryError(
+        pool, "/api/v1/namespaces/prod/pods/api-7f8", reason=urllib3.exceptions.ReadTimeoutError(
+            pool, "/api/v1/namespaces/prod/pods/api-7f8", "Read timed out."
+        ),
+    )
 
     try:
         get_evidence(_alert({"namespace": "prod", "pod": "api-7f8"}))

@@ -10,6 +10,7 @@ review, and is independently checked by
 """
 
 import structlog
+import urllib3.exceptions
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 from pydantic import BaseModel
@@ -159,7 +160,11 @@ def get_evidence(alert: Alert) -> ClusterEvidence | None:
         raise ClusterEvidenceError(
             f"Kubernetes API call failed for {resource_kind} {namespace}/{name}: {exc}"
         ) from exc
-    except TimeoutError as exc:
+    except (TimeoutError, urllib3.exceptions.HTTPError) as exc:
+        # [QA Story 2.3 REL-004] A real `_request_timeout` expiry surfaces as
+        # urllib3.exceptions.MaxRetryError/ReadTimeoutError, not the builtin
+        # TimeoutError -- neither subclasses the other, so both must be
+        # caught here for AC4's degradation path to actually trigger.
         raise ClusterEvidenceError(
-            f"Kubernetes API call timed out for {resource_kind} {namespace}/{name}"
+            f"Kubernetes API call timed out for {resource_kind} {namespace}/{name}: {exc}"
         ) from exc
