@@ -54,6 +54,11 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+      - name: create kind cluster
+        # Story 2.3's AC is specifically about real kubectl behavior
+        # (including real timeouts for the degradation path), so this is
+        # real infrastructure, not a mock. [Source: architecture/test-strategy-and-standards.md]
+        uses: helm/kind-action@v1.15.2
       - uses: astral-sh/setup-uv@v4
       - run: uv sync
         working-directory: apps/incident-copilot
