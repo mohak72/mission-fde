@@ -34,7 +34,9 @@ def _propose(state: GraphState, runtime: Runtime[PipelineContext]) -> dict:
     rather than in `propose.py` so that file stays byte-for-byte what
     Story 2.1 shipped. [Source: docs/stories/2.2.langgraph-state-machine-refactor.md#tasks-subtasks]
     """
-    diagnosis = propose_diagnosis(state.alert, runtime.context.session)
+    diagnosis = propose_diagnosis(
+        state.alert, runtime.context.session, live_evidence=state.live_evidence
+    )
     return {"diagnosis": diagnosis}
 
 
@@ -113,7 +115,7 @@ def run_pipeline(alert: Alert, session: Session) -> PipelineRun:
                 cause=diagnosis.cause,
                 next_step_action=diagnosis.next_step_action,
                 runbook_citation=diagnosis.runbook_citation,
-                live_evidence=None,
+                live_evidence=final_state.live_evidence,
                 grounded_in_live_state=final_state.grounded_in_live_state,
             )
 

@@ -32,7 +32,7 @@ def test_run_pipeline_executes_nodes_in_order_and_records_transitions(mocker) ->
         call_order.append("investigate")
         return {"grounded_in_live_state": False}
 
-    def propose_diagnosis_mock(alert, session):
+    def propose_diagnosis_mock(alert, session, live_evidence=None):
         call_order.append("propose")
         return DiagnosisResult(matched=False)
 
