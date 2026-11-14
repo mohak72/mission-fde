@@ -14,6 +14,7 @@ dependencies = [
     "structlog>=26.0,<27",
     "platform-core",
     "langgraph==1.2.20",
+    "kubernetes==37.0.1",
 ]
 
 [dependency-groups]
