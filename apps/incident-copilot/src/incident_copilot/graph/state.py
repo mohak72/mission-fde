@@ -21,6 +21,7 @@ class GraphState(BaseModel):
     alert_type: str | None = None
     runbook: Runbook | None = None
     diagnosis: DiagnosisResult | None = None
+    live_evidence: dict | None = None
     grounded_in_live_state: bool = False
     approval_status: str | None = None
 
