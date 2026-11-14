@@ -1,0 +1,117 @@
+schema: 1
+story: "2.3"
+story_title: "Read-Only kubectl Evidence Grounding"
+gate: CONCERNS
+status_reason: >
+  AC1-3 (pod/deployment describe, read-only-only enforcement, live-evidence
+  citation in the proposal) verified sound, including an independent static
+  check that the kind-cluster CI job and the propose.py default-preserving
+  change both work as claimed. AC4's "or times out" clause is not actually
+  satisfied: get_evidence()'s except clauses (ApiException, builtin
+  TimeoutError) do not match what the real kubernetes/urllib3 client raises
+  on a request timeout (urllib3.exceptions.MaxRetryError / ReadTimeoutError,
+  which do NOT subclass the builtin TimeoutError). Reproduced independently
+  with a direct repro against the real module: a mocked MaxRetryError leaks
+  straight out of get_evidence(), uncaught by ClusterEvidenceError, uncaught
+  by investigate.py, and would be caught only by run_pipeline's outer
+  except Exception -- marking the whole run failed, which is exactly what
+  AC4 says must not happen. The project's own existing unit test for this
+  path is a tautology: it mocks side_effect=TimeoutError(...) (the builtin),
+  i.e. it tests that the except clause catches what it was written to catch,
+  not what a real timeout actually raises -- same root-cause shape as
+  Story 2.1 REL-001 and Story 2.2 REL-003.
+reviewer: "Quinn (Test Architect)"
+updated: "2026-11-14T16:30:00Z"
+
+waiver: { active: false }
+
+top_issues:
+  - id: "REL-004"
+    severity: high
+    finding: >
+      get_evidence() in cluster/evidence.py catches `ApiException` and the
+      builtin `TimeoutError`, but a real Kubernetes API request timeout
+      (via `_request_timeout`) raises `urllib3.exceptions.MaxRetryError` or
+      `urllib3.exceptions.ReadTimeoutError` -- neither subclasses
+      `ApiException` nor Python's builtin `TimeoutError` (confirmed via MRO
+      inspection and a direct repro: a mocked MaxRetryError propagates as a
+      raw urllib3 exception out of get_evidence(), past investigate.py's
+      `except ClusterEvidenceError`, and is only caught by run_pipeline's
+      outer handler -- which marks the entire run FAILED). This breaks
+      AC4's explicit "or times out" guarantee: a slow/hung cluster call
+      fails the whole pipeline instead of degrading gracefully. The
+      existing unit test (test_get_evidence_raises_cluster_evidence_error_on_timeout)
+      does not catch this because it mocks the builtin TimeoutError rather
+      than a real urllib3 timeout exception.
+    suggested_action: >
+      Catch `urllib3.exceptions.MaxRetryError` and
+      `urllib3.exceptions.ReadTimeoutError` (or more simply, broaden the
+      except clause in get_evidence() to translate any exception from the
+      three Kubernetes API calls into ClusterEvidenceError, since this
+      module's whole purpose is to be the SDK-exception translation
+      boundary) and update/replace the existing timeout unit test to mock
+      a real urllib3 timeout exception, not the builtin TimeoutError.
+    suggested_owner: dev
+
+risk_summary:
+  totals: { critical: 0, high: 1, medium: 0, low: 0 }
+  recommendations:
+    must_fix:
+      - "REL-004: translate real Kubernetes/urllib3 timeout exceptions to ClusterEvidenceError, not just ApiException/builtin TimeoutError"
+    monitor:
+      - "The AST-based static guard (test_evidence_static_guard.py) only inspects ast.Attribute nodes -- a hypothetical getattr(api, \"delete_namespaced_pod\")(...) call would not be caught. No current code uses dynamic dispatch, so this is not an active gap, but worth re-checking if evidence.py's call style ever changes."
+
+quality_score: 90
+expires: "2026-11-28T00:00:00Z"
+
+evidence:
+  tests_reviewed: 44
+  risks_identified: 1
+  trace:
+    ac_covered: [1, 2, 3]
+    ac_gaps: [4]
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      Static guard (AST-based, re-verified sound against the actual current
+      file) confirms no write/mutating Kubernetes verb is referenced in
+      cluster/evidence.py. No raw alert payload/kubeconfig logged. bandit
+      clean. pip-audit: same 4 pre-existing chromadb==1.5.9 CVEs as prior
+      stories, not introduced here.
+  performance:
+    status: PASS
+    notes: >
+      10s _request_timeout applied consistently to all three Kubernetes API
+      call sites (read_namespaced_pod, list_namespaced_event,
+      read_namespaced_deployment) -- confirmed by reading each call site,
+      not just the happy-path test.
+  reliability:
+    status: CONCERNS
+    notes: >
+      REL-004 (see top_issues) -- AC4's timeout-degradation path is not
+      actually exercised correctly; a real timeout fails the pipeline run
+      instead of degrading gracefully. The ApiException path (a reachable
+      cluster error, e.g. 404/403) IS correctly translated and degrades as
+      designed -- this is specifically a timeout-classification gap, not a
+      total failure of the graceful-degradation mechanism.
+  maintainability:
+    status: PASS
+    notes: >
+      propose.py's live_evidence addition verified non-breaking: Story 2.2's
+      regression fixture (test_pipeline_regression.py) re-run and still
+      passes unmodified, confirming the default (None) path produces an
+      unchanged prompt. Code is otherwise clean, well-commented at the
+      judgment-call points (resource resolution, timeout rationale).
+
+history:
+  - at: "2026-11-14T16:30:00Z"
+    gate: CONCERNS
+    note: "Initial review -- REL-004 (high): real Kubernetes/urllib3 timeout exceptions not caught, breaking AC4's timeout-degradation guarantee"
+
+recommendations:
+  immediate:
+    - "Fix REL-004 before merge: AC4 explicitly names timeouts, and this is the exact scenario the fix must cover."
+  future:
+    - "Consider hardening the static guard against dynamic-dispatch write calls (getattr-based) if evidence.py's call style ever changes from direct attribute access."
