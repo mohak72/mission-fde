@@ -68,6 +68,42 @@ def test_propose_diagnosis_surfaces_gateway_error(mocker) -> None:
         propose_diagnosis(ALERT, object())
 
 
+def test_propose_diagnosis_includes_live_evidence_in_prompt_when_provided(mocker) -> None:
+    mocker.patch(
+        "incident_copilot.graph.nodes.propose.retrieve_runbook", return_value=RUNBOOK
+    )
+    mock_complete = mocker.patch("incident_copilot.graph.nodes.propose.complete")
+    mock_complete.return_value.content = (
+        "Cause: Container exceeded its memory limit\n"
+        "Action: Raise resources.limits.memory\n"
+        "Citation: Resolution"
+    )
+    live_evidence = {"status_summary": "pod checkout-7f9c in CrashLoopBackOff, restart count 7"}
+
+    propose_diagnosis(ALERT, object(), live_evidence=live_evidence)
+
+    prompt = mock_complete.call_args[0][0]
+    assert "Live Cluster Evidence" in prompt
+    assert "restart count 7" in prompt
+
+
+def test_propose_diagnosis_omits_live_evidence_section_when_not_provided(mocker) -> None:
+    mocker.patch(
+        "incident_copilot.graph.nodes.propose.retrieve_runbook", return_value=RUNBOOK
+    )
+    mock_complete = mocker.patch("incident_copilot.graph.nodes.propose.complete")
+    mock_complete.return_value.content = (
+        "Cause: Container exceeded its memory limit\n"
+        "Action: Raise resources.limits.memory\n"
+        "Citation: Resolution"
+    )
+
+    propose_diagnosis(ALERT, object())
+
+    prompt = mock_complete.call_args[0][0]
+    assert "Live Cluster Evidence" not in prompt
+
+
 def test_propose_diagnosis_raises_on_malformed_llm_response(mocker) -> None:
     """REL-002: a non-conforming LLM response (missing one of the required
     Cause/Action/Citation lines) must raise, never silently return

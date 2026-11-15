@@ -8,6 +8,7 @@ mocked, same tier/asymmetric-mocking convention as that file.
 
 from sqlalchemy.orm import Session
 
+from incident_copilot.cluster.evidence import ClusterEvidence
 from incident_copilot.graph.nodes.propose import propose_diagnosis
 from incident_copilot.graph.pipeline import run_pipeline
 from incident_copilot.persistence.models import DiagnosisProposal
@@ -51,6 +52,58 @@ def test_run_pipeline_matches_direct_propose_diagnosis_call(mocker, db_session: 
     assert proposal.cause == direct_result.cause
     assert proposal.next_step_action == direct_result.next_step_action
     assert proposal.runbook_citation == direct_result.runbook_citation
+
+
+def test_run_pipeline_persists_live_evidence_matching_investigate_output(
+    mocker, db_session: Session
+) -> None:
+    """Story 2.3 AC3/Task 5: the persisted `DiagnosisProposal.live_evidence`/
+    `grounded_in_live_state` must match exactly what the investigate node
+    produced for that run -- same "compare graph output to the known-correct
+    value" pattern as this file's other regression tests, but mocking
+    `get_evidence` directly rather than needing a real `kind` cluster (that
+    full-stack case is `test_investigate_evidence.py`'s job)."""
+    seed_runbooks(db_session)
+    alert, _ = AlertRepository(db_session).insert_if_new(
+        "regression-3",
+        {
+            "labels": {
+                "alertname": "KubePodCrashLooping",
+                "namespace": "prod",
+                "pod": "checkout-7f9c-abc12",
+            },
+            "annotations": {
+                "summary": "Pod checkout-7f9c-abc12 is crash looping",
+                "description": (
+                    "Container checkout was OOMKilled, exit code 137, memory limit exceeded"
+                ),
+            },
+        },
+        signature_verified=True,
+    )
+    evidence = ClusterEvidence(
+        resource_kind="Pod",
+        resource_name="checkout-7f9c-abc12",
+        namespace="prod",
+        status_summary="pod checkout-7f9c-abc12 in CrashLoopBackOff, restart count 7",
+        raw={"restart_count": 7},
+    )
+    mocker.patch("incident_copilot.graph.nodes.investigate.get_evidence", return_value=evidence)
+    mocker.patch(
+        "incident_copilot.graph.nodes.propose.complete",
+        return_value=mocker.Mock(content=MOCK_LLM_RESPONSE),
+    )
+
+    run = run_pipeline(alert, db_session)
+
+    assert run.status == "completed"
+    proposal = (
+        db_session.query(DiagnosisProposal)
+        .filter(DiagnosisProposal.pipeline_run_id == run.id)
+        .one()
+    )
+    assert proposal.grounded_in_live_state is True
+    assert proposal.live_evidence == evidence.model_dump()
 
 
 def test_run_pipeline_creates_no_proposal_on_no_match(mocker, db_session: Session) -> None:
